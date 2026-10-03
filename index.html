@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<style>body{margin:0}</style>
+</head>
+<body>
+<title>Flat Walk-through</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap">
+<style>
+/* Layout: full-screen 3D view; compact HUD panels pinned to corners; goggles mode hides HUD and splits the screen per eye */
+:root {
+  --ink: #EEF2F4;
+  --ink-dim: #A9B6BD;
+  --panel: rgba(18, 26, 31, 0.82);
+  --line: rgba(238, 242, 244, 0.16);
+  --accent: #7FB0CC;
+  --warn: #E2B866;
+  --ground: #121A1F;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { background: var(--ground); color: var(--ink); font-family: var(--display); overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; }
+#view { position: fixed; inset: 0; display: block; width: 100%; height: 100%; }
+.hud { position: fixed; z-index: 2; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+#top { top: calc(env(safe-area-inset-top, 0px) + 12px); left: 12px; padding: 10px 14px; display: grid; gap: 2px; max-width: calc(100% - 180px); }
+#top h1 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: 0.01em; }
+#room { font-size: 14px; color: var(--accent); font-weight: 500; }
+#coords { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+#map { top: calc(env(safe-area-inset-top, 0px) + 12px); right: 12px; padding: 6px; }
+#map canvas { display: block; width: 150px; height: auto; border-radius: 4px; }
+#controls { left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); padding: 8px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; width: max-content; max-width: calc(100% - 32px); }
+button { font: 600 14px/1 var(--display); color: var(--ink); background: rgba(238,242,244,0.08); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; cursor: pointer; touch-action: none; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); color: #0E1A21; border-color: transparent; }
+button:active { filter: brightness(1.2); }
+#info { left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 84px); margin-inline: auto; max-width: 460px; padding: 14px 16px; font-size: 13px; line-height: 1.45; color: var(--ink-dim); }
+#info h2 { margin: 0 0 6px; font-size: 14px; color: var(--ink); }
+#info ul { margin: 6px 0 0; padding-left: 18px; }
+#info b { color: var(--warn); font-weight: 600; font-family: var(--mono); font-size: 11px; }
+#exit { position: fixed; z-index: 3; top: calc(env(safe-area-inset-top, 0px) + 8px); left: 8px; padding: 8px 10px; font-size: 12px; background: var(--panel); }
+#divider { position: fixed; z-index: 2; top: 0; bottom: 0; left: 50%; width: 2px; margin-left: -1px; background: #000; }
+#toast { position: fixed; z-index: 3; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 12px 16px; max-width: 80%; text-align: center; font-size: 14px; line-height: 1.4; pointer-events: none; }
+#rotate { position: fixed; inset: 0; z-index: 4; display: grid; place-items: center; background: var(--ground); text-align: center; padding: 24px; font-size: 16px; line-height: 1.5; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<canvas id="view"></canvas>
+
+<div id="top" class="hud">
+  <h1>Flat Walk-through</h1>
+  <div id="room">Hallway</div>
+  <div id="coords">x 0.00 m · y 0.00 m · eye 1.60 m</div>
+</div>
+<div id="map" class="hud"><canvas id="mini" width="300" height="143" aria-label="Plan with your position"></canvas></div>
+
+<div id="info" class="hud" hidden>
+  <h2>About this model</h2>
+  Built from the Flat floorplan handoff (30 Sept 2026). Coordinates are in metres from the living room's window corner. Assumptions:
+  <ul>
+    <li><b>[CHECK]</b> Ceiling height 2.4 m</li>
+    <li><b>[CHECK]</b> Door openings 2.0 m high; window sills 0.9 m, window heads 2.1 m</li>
+    <li><b>[CHECK]</b> Living room tall window / patio door, read from photos</li>
+    <li>Wall thickness not modelled; thin walls drawn on room edges</li>
+    <li>No furniture yet</li>
+  </ul>
+  Controls: drag to look; hold Forward or Back to walk; keys W A S D or arrows. In goggles: turn your head to look, hold the screen (or the goggles' button) to walk.
+</div>
+
+<div id="controls" class="hud">
+  <button id="back" type="button">Back</button>
+  <button id="fwd" type="button">Forward</button>
+  <button id="goggles" type="button" class="primary">Goggles view</button>
+  <button id="about" type="button">About</button>
+</div>
+
+<button id="exit" type="button" hidden>Exit</button>
+<div id="divider" hidden></div>
+<div id="toast" class="hud" hidden></div>
+<div id="rotate" hidden>Turn your phone sideways, then place it in the goggles.</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+// ---------- Plan data (cm), from the Flat floorplan handoff ----------
+const W = 1133, H = 538, CEIL = 2.4, EYE = 1.6;
+const ROOMS = [
+  { id: 1, name: "Living room",          col: "#C9A982", rects: [[0,0,465,538]] },
+  { id: 2, name: "Kitchen",              col: "#B9BDB8", rects: [[196,0,465,239]] },
+  { id: 3, name: "Bedroom 1",            col: "#A7B3C2", rects: [[465,0,742,422],[742,235,837,422]] },
+  { id: 4, name: "Hall cupboard",        col: "#8E8A82", rects: [[465,280,575,422]] },
+  { id: 5, name: "Bathroom",             col: "#9DC0C6", rects: [[742,0,922,235]] },
+  { id: 6, name: "Hallway",              col: "#B8946C", rects: [[465,422,1133,538],[837,235,922,422]] },
+  { id: 7, name: "Bedroom 2 (office)",   col: "#B4AFC4", rects: [[922,0,1133,338]] },
+  { id: 8, name: "Bedroom 2 cupboard",   col: "#8E8A82", rects: [[922,338,1012,422]] },
+  { id: 9, name: "Bedroom 2 wardrobe",   col: "#8E8A82", rects: [[1012,338,1133,422]] },
+];
+const WALL = 1, OPEN = 2, DOOR = 3, WIN = 4, PATIO = 5;
+// [type, orientation ('v' = wall at constant x, 'h' = constant y), position, from, to]
+const OPENINGS = [
+  [OPEN, "v", 196, 0, 185],     // kitchen open side (stub 1.85 to 2.39 stays)
+  [DOOR, "v", 1133, 450, 530],  // front door
+  [DOOR, "v", 465, 420, 500],   // living room door
+  [DOOR, "v", 837, 255, 335],   // bedroom 1 door
+  [DOOR, "h", 235, 845, 915],   // bathroom door
+  [DOOR, "v", 922, 255, 330],   // bedroom 2 door
+  [DOOR, "h", 422, 480, 560],   // hall cupboard door
+  [DOOR, "h", 422, 930, 1005],  // bedroom 2 cupboard door
+  [DOOR, "h", 338, 1030, 1120], // bedroom 2 wardrobe doors
+  [WIN, "h", 0, 50, 140], [WIN, "h", 0, 240, 410], [WIN, "h", 0, 530, 660], [WIN, "h", 0, 780, 880], [WIN, "h", 0, 980, 1090],
+  [PATIO, "v", 0, 340, 460],    // [CHECK] patio door
+];
+
+// ---------- Region grid at 1 cm ----------
+const reg = new Uint8Array(W * H);
+for (const r of ROOMS) for (const [x0,y0,x1,y1] of r.rects)
+  for (let j = y0; j < y1; j++) reg.fill(r.id, j * W + x0, j * W + x1);
+const R = (i, j) => (i < 0 || j < 0 || i >= W || j >= H) ? 0 : reg[j * W + i];
+const openingAt = (o, pos, k) => { for (const [t,oo,p,a,b] of OPENINGS) if (oo === o && p === pos && k >= a && k < b) return t; return WALL; };
+const vT = new Uint8Array((W + 1) * H), hT = new Uint8Array(W * (H + 1));
+for (let i = 0; i <= W; i++) for (let j = 0; j < H; j++) if (R(i-1,j) !== R(i,j)) vT[i*H + j] = openingAt("v", i, j);
+for (let j = 0; j <= H; j++) for (let i = 0; i < W; i++) if (R(i,j-1) !== R(i,j)) hT[j*W + i] = openingAt("h", j, i);
+
+// runs of same edge type
+const runs = [];
+for (let i = 0; i <= W; i++) { let s = 0; for (let j = 1; j <= H; j++) { const a = vT[i*H + j - 1], b = j < H ? vT[i*H + j] : -1; if (b !== a) { if (a) runs.push({ t: a, x1: i, z1: s, x2: i, z2: j }); s = j; } } }
+for (let j = 0; j <= H; j++) { let s = 0; for (let i = 1; i <= W; i++) { const a = hT[j*W + i - 1], b = i < W ? hT[j*W + i] : -1; if (b !== a) { if (a) runs.push({ t: a, x1: s, z1: j, x2: i, z2: j }); s = i; } } }
+
+// ---------- Floor texture (also used for the minimap) ----------
+const S = 2, floorCv = document.createElement("canvas");
+floorCv.width = W * S; floorCv.height = H * S;
+const fx = floorCv.getContext("2d");
+for (const r of ROOMS) { fx.fillStyle = r.col; for (const [x0,y0,x1,y1] of r.rects) fx.fillRect(x0*S, y0*S, (x1-x0)*S, (y1-y0)*S); }
+const img = fx.getImageData(0, 0, floorCv.width, floorCv.height); // repaint kitchen over living precisely via grid
+for (let y = 0; y < floorCv.height; y++) for (let x = 0; x < floorCv.width; x++) {
+  const id = reg[Math.floor(y/S) * W + Math.floor(x/S)]; const room = ROOMS[id - 1]; if (!room) continue;
+  const c = parseInt(room.col.slice(1), 16), k = (y * floorCv.width + x) * 4;
+  img.data[k] = c >> 16; img.data[k+1] = (c >> 8) & 255; img.data[k+2] = c & 255; img.data[k+3] = 255;
+}
+fx.putImageData(img, 0, 0);
+fx.strokeStyle = "rgba(0,0,0,0.10)"; fx.lineWidth = 2;
+for (let x = 100; x < W; x += 100) { fx.beginPath(); fx.moveTo(x*S, 0); fx.lineTo(x*S, H*S); fx.stroke(); }
+for (let y = 100; y < H; y += 100) { fx.beginPath(); fx.moveTo(0, y*S); fx.lineTo(W*S, y*S); fx.stroke(); }
+fx.fillStyle = "rgba(20,26,30,0.55)"; fx.textAlign = "center"; fx.textBaseline = "middle";
+for (const r of ROOMS) {
+  const [x0,y0,x1,y1] = r.rects[0]; const w = x1 - x0;
+  fx.font = `600 ${Math.max(14, Math.min(34, w / 6)) * S}px "IBM Plex Sans Condensed", sans-serif`;
+  fx.fillText(r.name, (x0 + x1) / 2 * S, (y0 + y1) / 2 * S);
+}
+const wallCv = document.createElement("canvas"); wallCv.width = floorCv.width; wallCv.height = floorCv.height;
+const wx = wallCv.getContext("2d"); wx.drawImage(floorCv, 0, 0);
+const typeCol = { [WALL]: "#1B2328", [DOOR]: "#E2B866", [WIN]: "#5FA8D3", [PATIO]: "#5FA8D3" };
+for (const r of runs) { wx.strokeStyle = typeCol[r.t]; wx.lineWidth = r.t === WALL ? 10 : 8; wx.beginPath(); wx.moveTo(r.x1*S, r.z1*S); wx.lineTo(r.x2*S, r.z2*S); wx.stroke(); }
+
+// ---------- Three.js scene ----------
+const canvas = document.getElementById("view");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#BFD8E6");
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7a66, 0.75));
+const sun = new THREE.DirectionalLight(0xffffff, 0.55); sun.position.set(-4, 8, -6); scene.add(sun);
+scene.add(new THREE.AmbientLight(0xffffff, 0.15));
+
+const floorTex = new THREE.CanvasTexture(floorCv);
+floorTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(W/100, H/100), new THREE.MeshLambertMaterial({ map: floorTex }));
+floor.rotation.x = -Math.PI / 2; floor.position.set(W/200, 0, H/200); scene.add(floor);
+const ceil = new THREE.Mesh(new THREE.PlaneGeometry(W/100, H/100), new THREE.MeshBasicMaterial({ color: 0xDCD8D0 }));
+ceil.rotation.x = Math.PI / 2; ceil.position.set(W/200, CEIL, H/200); scene.add(ceil);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshLambertMaterial({ color: 0x7E9A6E }));
+ground.rotation.x = -Math.PI / 2; ground.position.set(W/200, -0.02, H/200); scene.add(ground);
+
+const wallMat = new THREE.MeshLambertMaterial({ color: 0xEDEAE4 });
+const lintelMat = new THREE.MeshLambertMaterial({ color: 0xE3DCCF });
+const glassMat = new THREE.MeshLambertMaterial({ color: 0x9CC8E0, transparent: true, opacity: 0.28, depthWrite: false });
+const edgeMat = new THREE.LineBasicMaterial({ color: 0x8C877C });
+const T = 0.08;
+function piece(r, y0, y1, mat, thick, extend) {
+  const vertical = r.x1 === r.x2;
+  const len = (vertical ? r.z2 - r.z1 : r.x2 - r.x1) / 100 + (extend ? T : 0);
+  const g = new THREE.BoxGeometry(vertical ? thick : len, y1 - y0, vertical ? len : thick);
+  const m = new THREE.Mesh(g, mat);
+  m.position.set((r.x1 + r.x2) / 200, (y0 + y1) / 2, (r.z1 + r.z2) / 200);
+  scene.add(m);
+  if (mat !== glassMat) { const e = new THREE.LineSegments(new THREE.EdgesGeometry(g), edgeMat); e.position.copy(m.position); scene.add(e); }
+}
+for (const r of runs) {
+  if (r.t === WALL) piece(r, 0, CEIL, wallMat, T, true);
+  else if (r.t === DOOR) piece(r, 2.0, CEIL, lintelMat, T, false);
+  else if (r.t === WIN) { piece(r, 0, 0.9, wallMat, T, false); piece(r, 2.1, CEIL, wallMat, T, false); piece(r, 0.9, 2.1, glassMat, 0.02, false); }
+  else if (r.t === PATIO) { piece(r, 2.1, CEIL, wallMat, T, false); piece(r, 0, 2.1, glassMat, 0.02, false); }
+}
+
+// ---------- Cameras ----------
+const cam = new THREE.PerspectiveCamera(70, 1, 0.05, 100);
+cam.rotation.order = "YXZ";
+const camL = new THREE.PerspectiveCamera(80, 1, 0.05, 100), camR = camL.clone();
+const pos = new THREE.Vector3(11.0, EYE, 4.9);
+let yaw = Math.PI / 2, pitch = 0; // facing along the hall towards the living room
+
+// reticle for goggles mode
+const ret = new THREE.Mesh(new THREE.RingGeometry(0.006, 0.010, 24), new THREE.MeshBasicMaterial({ color: 0x1B2328, depthTest: false }));
+ret.position.z = -0.6; ret.renderOrder = 10; cam.add(ret); scene.add(cam); ret.visible = false;
+
+// ---------- Collision ----------
+const passable = (a, b, edge) => a && b && (a === b || edge === OPEN || edge === DOOR);
+function canMove(x0, z0, x1, z1) {
+  let i = Math.floor(x0 * 100), j = Math.floor(z0 * 100);
+  const ti = Math.floor(x1 * 100), tj = Math.floor(z1 * 100);
+  while (i !== ti) { const n = i + Math.sign(ti - i); const e = vT[Math.max(i, n) * H + j]; if (!passable(R(i,j), R(n,j), e)) return false; i = n; }
+  while (j !== tj) { const n = j + Math.sign(tj - j); const e = hT[Math.max(j, n) * W + i]; if (!passable(R(i,j), R(i,n), e)) return false; j = n; }
+  return true;
+}
+function tryMove(dx, dz) {
+  const tryOne = (ax, az) => {
+    const len = Math.hypot(ax, az); if (!len) return false;
+    const px = pos.x + ax + ax / len * 0.22, pz = pos.z + az + az / len * 0.22;
+    if (canMove(pos.x, pos.z, px, pz)) { pos.x += ax; pos.z += az; return true; }
+    return false;
+  };
+  if (!tryOne(dx, dz)) { tryOne(dx, 0) || tryOne(0, dz); }
+}
+
+// ---------- Device orientation (head tracking) ----------
+let sensor = null, sensorLive = false, yawOffset = 0, calibrated = false;
+const zee = new THREE.Vector3(0, 0, 1), eul = new THREE.Euler(), q0 = new THREE.Quaternion(), q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+const sensorQ = new THREE.Quaternion(), yawQ = new THREE.Quaternion(), upY = new THREE.Vector3(0, 1, 0);
+function onOrient(e) {
+  if (e.alpha == null) return;
+  sensor = e; sensorLive = true;
+}
+function screenAngle() { return ((screen.orientation && screen.orientation.angle) || window.orientation || 0) * Math.PI / 180; }
+function updateSensorQ() {
+  const d = THREE.MathUtils.DEG2RAD;
+  eul.set(sensor.beta * d, sensor.alpha * d, -sensor.gamma * d, "YXZ");
+  sensorQ.setFromEuler(eul); sensorQ.multiply(q1); sensorQ.multiply(q0.setFromAxisAngle(zee, -screenAngle()));
+}
+const headingOf = (q) => { const f = new THREE.Vector3(0, 0, -1).applyQuaternion(q); return Math.atan2(-f.x, -f.z); };
+
+// ---------- Input ----------
+const keys = {}; let walk = 0;
+addEventListener("keydown", e => { keys[e.key.toLowerCase()] = true; });
+addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
+function holdButton(id, dir) {
+  const b = document.getElementById(id);
+  b.addEventListener("pointerdown", e => { e.preventDefault(); walk = dir; b.setPointerCapture(e.pointerId); });
+  const stop = () => { if (walk === dir) walk = 0; };
+  b.addEventListener("pointerup", stop); b.addEventListener("pointercancel", stop);
+}
+holdButton("fwd", 1); holdButton("back", -1);
+
+let goggles = false, drag = null, holdTimer = null, holding = false, downAt = 0;
+canvas.addEventListener("pointerdown", e => {
+  canvas.setPointerCapture(e.pointerId);
+  if (goggles) { downAt = performance.now(); holdTimer = setTimeout(() => { holding = true; }, 220); return; }
+  drag = { x: e.clientX, y: e.clientY };
+});
+canvas.addEventListener("pointermove", e => {
+  if (!drag || goggles) return;
+  yaw += (e.clientX - drag.x) * 0.005; pitch += (e.clientY - drag.y) * 0.005;
+  pitch = Math.max(-1.3, Math.min(1.3, pitch)); drag = { x: e.clientX, y: e.clientY };
+});
+function pointerEnd() {
+  drag = null;
+  if (goggles) {
+    clearTimeout(holdTimer);
+    if (!holding && performance.now() - downAt < 220) {
+      if (sensorLive) stepForward(0.5); else yaw -= Math.PI / 4; // tap: step (head tracking) or turn right 45°
+    }
+    holding = false;
+  }
+}
+canvas.addEventListener("pointerup", pointerEnd); canvas.addEventListener("pointercancel", pointerEnd);
+
+const fwdVec = new THREE.Vector3();
+function stepForward(d) {
+  cam.getWorldDirection(fwdVec); fwdVec.y = 0;
+  if (fwdVec.lengthSq() < 1e-4) return; fwdVec.normalize();
+  const n = Math.max(1, Math.ceil(Math.abs(d) / 0.05));
+  for (let k = 0; k < n; k++) tryMove(fwdVec.x * d / n, fwdVec.z * d / n);
+}
+
+// ---------- Modes ----------
+const $ = (id) => document.getElementById(id);
+const hudEls = ["top", "map", "controls"].map($);
+let toastTimer;
+function toast(msg, ms) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, ms || 4000); }
+let wakeLock = null;
+async function enterGoggles() {
+  goggles = true; $("info").hidden = true;
+  hudEls.forEach(el => el.hidden = true); $("exit").hidden = false; $("divider").hidden = false; ret.visible = true;
+  try { if (typeof DeviceOrientationEvent !== "undefined" && DeviceOrientationEvent.requestPermission) await DeviceOrientationEvent.requestPermission(); } catch (e) {}
+  addEventListener("deviceorientation", onOrient);
+  try { await document.documentElement.requestFullscreen?.(); } catch (e) {}
+  try { await screen.orientation?.lock?.("landscape"); } catch (e) {}
+  try { wakeLock = await navigator.wakeLock?.request("screen"); } catch (e) {}
+  calibrated = false; resize();
+  setTimeout(() => {
+    if (!goggles) return;
+    toast(sensorLive ? "Head tracking on. Hold the screen to walk." : "Head tracking is not available here. Hold the screen to walk, tap to turn right.", 5000);
+  }, 1200);
+}
+function exitGoggles() {
+  goggles = false; hudEls.forEach(el => el.hidden = false); $("exit").hidden = true; $("divider").hidden = true; $("rotate").hidden = true; ret.visible = false;
+  removeEventListener("deviceorientation", onOrient);
+  if (sensorLive) { cam.getWorldDirection(fwdVec); yaw = Math.atan2(-fwdVec.x, -fwdVec.z); pitch = 0; }
+  sensorLive = false; sensor = null;
+  try { document.fullscreenElement && document.exitFullscreen(); } catch (e) {}
+  try { wakeLock && wakeLock.release(); } catch (e) {}
+  resize();
+}
+$("goggles").addEventListener("click", enterGoggles);
+$("exit").addEventListener("click", exitGoggles);
+$("about").addEventListener("click", () => { $("info").hidden = !$("info").hidden; });
+
+// ---------- Render ----------
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  cam.aspect = w / h; cam.updateProjectionMatrix();
+  camL.aspect = camR.aspect = (w / 2) / h; camL.updateProjectionMatrix(); camR.updateProjectionMatrix();
+  $("rotate").hidden = !(goggles && h > w);
+}
+addEventListener("resize", resize); resize();
+
+const mini = $("mini"), mx = mini.getContext("2d"), roomEl = $("room"), coordsEl = $("coords");
+let lastRoom = "";
+const right = new THREE.Vector3();
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const turn = (keys["arrowleft"] || keys["a"] ? 1 : 0) - (keys["arrowright"] || keys["d"] ? 1 : 0);
+  yaw += turn * 1.8 * dt;
+  const kWalk = (keys["arrowup"] || keys["w"] ? 1 : 0) - (keys["arrowdown"] || keys["s"] ? 1 : 0);
+
+  cam.position.copy(pos);
+  if (goggles && sensorLive && sensor) {
+    updateSensorQ();
+    if (!calibrated) { yawOffset = yaw - headingOf(sensorQ); calibrated = true; }
+    yawQ.setFromAxisAngle(upY, yawOffset); cam.quaternion.copy(yawQ).multiply(sensorQ);
+  } else {
+    if (goggles) calibrated = false;
+    cam.rotation.set(goggles ? 0 : pitch, yaw, 0);
+  }
+  const w = (goggles && holding ? 1 : 0) || walk || kWalk;
+  if (w) stepForward(w * 1.2 * dt);
+  cam.position.copy(pos); cam.updateMatrixWorld();
+
+  if (goggles) {
+    const ww = innerWidth, hh = innerHeight;
+    right.set(1, 0, 0).applyQuaternion(cam.quaternion);
+    for (const [c, s, x] of [[camL, -1, 0], [camR, 1, ww / 2]]) {
+      c.position.copy(cam.position).addScaledVector(right, s * 0.032); c.quaternion.copy(cam.quaternion); c.updateMatrixWorld();
+      renderer.setViewport(x, 0, ww / 2, hh); renderer.setScissor(x, 0, ww / 2, hh); renderer.setScissorTest(true);
+      renderer.render(scene, c);
+    }
+    renderer.setScissorTest(false);
+  } else {
+    renderer.setViewport(0, 0, innerWidth, innerHeight);
+    renderer.render(scene, cam);
+    // HUD
+    const id = R(Math.floor(pos.x * 100), Math.floor(pos.z * 100)); const name = ROOMS[id - 1] ? ROOMS[id - 1].name : "";
+    if (name !== lastRoom) { roomEl.textContent = name; lastRoom = name; }
+    coordsEl.textContent = `x ${pos.x.toFixed(2)} m · y ${pos.z.toFixed(2)} m · eye ${EYE.toFixed(2)} m`;
+    mx.clearRect(0, 0, mini.width, mini.height); mx.drawImage(wallCv, 0, 0, mini.width, mini.height);
+    const sx = mini.width / (W / 100), px = pos.x * sx, pz = pos.z * sx;
+    cam.getWorldDirection(fwdVec);
+    mx.fillStyle = "rgba(127,176,204,0.35)"; mx.beginPath(); mx.moveTo(px, pz);
+    const a = Math.atan2(fwdVec.z, fwdVec.x); mx.arc(px, pz, 26, a - 0.5, a + 0.5); mx.closePath(); mx.fill();
+    mx.fillStyle = "#0E1A21"; mx.beginPath(); mx.arc(px, pz, 5, 0, Math.PI * 2); mx.fill();
+    mx.fillStyle = "#7FB0CC"; mx.beginPath(); mx.arc(px, pz, 3.2, 0, Math.PI * 2); mx.fill();
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
